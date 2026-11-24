@@ -1,4 +1,11 @@
+import os
+
+from dotenv import load_dotenv
+from solapi import SolapiMessageService
+from solapi.model import RequestMessage
 from config import DOOR_URL
+
+load_dotenv()
 
 
 def format_message(post):
@@ -9,9 +16,7 @@ def format_message(post):
         "lecture_material": "New Lecture Material"
     }
 
-    label = labels[post["type"]]
-
-    lines = [f"[DOOR-SMS] {label}"]
+    lines = [f"[DOOR-SMS] {labels[post['type']]}"]
 
     if post.get("course"):
         lines.append(f"Course: {post['course']}")
@@ -26,12 +31,32 @@ def format_message(post):
     return "\n".join(lines)
 
 
-def send_notification(post):
+def send_notification(post, dry_run=True):
 
-    message = format_message(post)
+    text = format_message(post)
 
-    print("\n========== SMS PREVIEW ==========")
-    print(message)
-    print("=================================")
+    print("\n========== NOTIFICATION ==========")
+    print(text)
 
-    return message
+    if dry_run:
+        print("Preview mode: No SMS sent.")
+        return None
+
+    service = SolapiMessageService(
+        api_key=os.environ["SOLAPI_API_KEY"],
+        api_secret=os.environ["SOLAPI_API_SECRET"]
+    )
+
+    message = RequestMessage(
+        from_=os.environ["SMS_SENDER"],
+        to=os.environ["SMS_RECEIVER"],
+        text=text
+    )
+
+    response = service.send(message)
+
+    print("Group ID:", response.group_info.group_id)
+    print("Accepted:", response.group_info.count.registered_success)
+    print("Failed:", response.group_info.count.registered_failed)
+
+    return response

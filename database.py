@@ -9,7 +9,11 @@ def connect_db():
         exist_ok=True
     )
 
-    return sqlite3.connect(DB_FILE)
+    conn = sqlite3.connect(DB_FILE)
+
+    conn.row_factory = sqlite3.Row
+
+    return conn
 
 
 def init_db():
@@ -33,6 +37,18 @@ def init_db():
         CREATE TABLE IF NOT EXISTS settings (
             key TEXT PRIMARY KEY,
             value TEXT
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS notifications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            post_id TEXT UNIQUE NOT NULL,
+            status TEXT DEFAULT 'pending',
+            group_id TEXT,
+            error TEXT,
+            sent_at DATETIME,
+            FOREIGN KEY (post_id) REFERENCES posts(id)
         )
     """)
 
@@ -70,7 +86,16 @@ def save_posts(posts):
             ))
 
             if cursor.rowcount == 1:
+
                 new_posts.append(post)
+
+                if initialized is not None:
+
+                    conn.execute("""
+                        INSERT OR IGNORE INTO notifications
+                        (post_id, status)
+                        VALUES (?, 'pending')
+                    """, (post["id"],))
 
         conn.execute("""
             INSERT OR IGNORE INTO settings
@@ -81,8 +106,9 @@ def save_posts(posts):
         conn.commit()
 
         if initialized is None:
+
             print("Initial database setup completed.")
-            print(f"Saved {len(new_posts)} existing posts.")
+
             return []
 
         return new_posts
@@ -103,3 +129,72 @@ def count_posts():
     conn.close()
 
     return count
+
+
+def get_pending_notifications():
+
+    conn = connect_db()
+
+    rows = conn.execute("""
+        SELECT posts.*
+        FROM posts
+        JOIN notifications
+        ON posts.id = notifications.post_id
+        WHERE notifications.status = 'pending'
+    """).fetchall()
+
+    conn.close()
+
+    return [dict(row) for row in rows]
+
+
+def claim_notification(post_id):
+
+    conn = connect_db()
+
+    cursor = conn.execute("""
+        UPDATE notifications
+        SET status = 'sending'
+        WHERE post_id = ?
+        AND status = 'pending'
+    """, (post_id,))
+
+    conn.commit()
+
+    claimed = cursor.rowcount == 1
+
+    conn.close()
+
+    return claimed
+
+
+def mark_accepted(post_id, group_id):
+
+    conn = connect_db()
+
+    conn.execute("""
+        UPDATE notifications
+        SET status = 'accepted',
+            group_id = ?,
+            sent_at = CURRENT_TIMESTAMP,
+            error = NULL
+        WHERE post_id = ?
+    """, (group_id, post_id))
+
+    conn.commit()
+    conn.close()
+
+
+def mark_failed(post_id, error, status="failed"):
+
+    conn = connect_db()
+
+    conn.execute("""
+        UPDATE notifications
+        SET status = ?,
+            error = ?
+        WHERE post_id = ?
+    """, (status, error, post_id))
+
+    conn.commit()
+    conn.close()
