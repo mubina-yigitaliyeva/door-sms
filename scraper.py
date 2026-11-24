@@ -142,50 +142,107 @@ def get_posts(page, course, post_type):
 
     page.goto(url)
 
-    page.locator(".lctNotice .boardList").wait_for()
-
-    items = page.locator(".boardList .boardItem").all()
-
     posts = []
+    visited_pages = set()
 
-    for item in items:
+    while True:
 
-        title = item.locator(
-            ".subject"
-        ).inner_text().strip()
+        page.locator(".lctNotice .boardList").wait_for()
 
-        date = item.locator(
-            ".info_date"
-        ).inner_text().strip()
+        items = page.locator(".boardList .boardItem").all()
 
-        writer = item.locator(
-            ".info_writer"
-        ).inner_text().strip()
+        current_page = page.locator(
+            ".paging input[name='pagenum']"
+        ).get_attribute("value")
 
-        onclick = item.locator(
-            "a[onclick*='movedetail']"
-        ).get_attribute("onclick")
+        if current_page in visited_pages:
+            raise RuntimeError("Pagination did not advance.")
 
-        match = re.search(r"movedetail\((\d+)\)", onclick or "")
+        visited_pages.add(current_page)
+
+        print(f"  {post_type}: Page {current_page}")
+
+        for item in items:
+
+            title = item.locator(
+                ".subject"
+            ).inner_text().strip()
+
+            date = item.locator(
+                ".info_date"
+            ).inner_text().strip()
+
+            writer = item.locator(
+                ".info_writer"
+            ).inner_text().strip()
+
+            onclick = item.locator(
+                "a[onclick*='movedetail']"
+            ).get_attribute("onclick")
+
+            match = re.search(
+                r"movedetail\((\d+)\)",
+                onclick or ""
+            )
+
+            if not match:
+                raise ValueError("Post ID not found.")
+
+            post_id = match.group(1)
+
+            posts.append({
+                "id": f"{course['id']}_{post_type}_{post_id}",
+                "post_id": post_id,
+                "course_id": course["id"],
+                "course": course["title"],
+                "type": post_type,
+                "title": title,
+                "date": date,
+                "writer": writer,
+                "url": url
+            })
+
+        next_button = page.locator(".paging a.next")
+
+        if next_button.count() == 0:
+            break
+
+        onclick = next_button.get_attribute("onclick")
+
+        match = re.search(
+            r"gopage\('mform','pagenum',\s*(\d+)",
+            onclick or ""
+        )
 
         if not match:
-            raise ValueError("Post ID could not be extracted.")
+            break
 
-        post_id = match.group(1)
+        next_page = match.group(1)
 
-        post = {
-            "id": f"{course['id']}_{post_type}_{post_id}",
-            "post_id": post_id,
-            "course_id": course["id"],
-            "course": course["title"],
-            "type": post_type,
-            "title": title,
-            "date": date,
-            "writer": writer,
-            "url": url
-        }
+        if int(next_page) <= int(current_page):
+            break
 
-        posts.append(post)
+        next_link = page.locator(
+            ".paging ul li a"
+        ).get_by_text(str(int(current_page) + 1), exact=True)
+
+        time.sleep(2)
+
+        if next_link.count() > 0:
+            next_link.first.click()
+        else:
+            next_button.click()
+
+        page.wait_for_function(
+            """oldPage => {
+                const input = document.querySelector(
+                    '.paging input[name="pagenum"]'
+                );
+                return input && input.value !== oldPage;
+            }""",
+            arg=current_page,
+            timeout=15000
+        )
 
     return posts
 

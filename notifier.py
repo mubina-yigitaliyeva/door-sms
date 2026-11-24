@@ -13,15 +13,15 @@ def format_message(post):
     labels = {
         "assignment": "New Assignment",
         "notice": "New Notice",
-        "lecture_material": "New Lecture Material"
+        "lecture_material": "New Material"
     }
 
-    lines = [f"[DOOR-SMS] {labels[post['type']]}"]
+    lines = [f"[DOOR] {labels[post['type']]}"]
 
     if post.get("course"):
-        lines.append(f"Course: {post['course']}")
+        lines.append(post["course"])
 
-    lines.append(f"Title: {post['title']}")
+    lines.append(post["title"])
 
     if post.get("deadline"):
         lines.append(f"Due: {post['deadline']}")
@@ -29,7 +29,6 @@ def format_message(post):
     lines.append(DOOR_URL)
 
     return "\n".join(lines)
-
 
 def send_notification(post, dry_run=True):
 
